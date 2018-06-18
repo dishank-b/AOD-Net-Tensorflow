@@ -33,11 +33,11 @@ class AOD(object):
 	def gen(self, input_img):
 		with tf.variable_scope("Generator") as scope:
 			conv1 = Conv_2D(input_img, output_chan=3, kernel=[1,1], stride=[1,1], padding="SAME", name="Conv1")
-			conv2 = Conv_2D(conv1, output_chan=3, kernel=[3,3], stride=[1,1], padding="SAME", name="Conv2")
+			conv2 = Conv_2D(conv1, output_chan=3, kernel=[3,3], stride=[1,1], padding="SAME", activation=L_Relu,name="Conv2")
 			concat_1 = tf.concat([conv1, conv2], axis=3, name="Concat_1")
-			conv3 = Conv_2D(concat_1, output_chan=3, kernel=[5,5], stride=[1,1], padding="SAME", name="Conv3")
+			conv3 = Conv_2D(concat_1, output_chan=3, kernel=[5,5], stride=[1,1], padding="SAME", activation=L_Relu, name="Conv3")
 			concat_2 = tf.concat([conv2, conv3], axis=3, name="Concat_2")
-			conv4 = Conv_2D(concat_2, output_chan=3, kernel=[7,7], stride=[1,1], padding="SAME", name="Conv4")
+			conv4 = Conv_2D(concat_2, output_chan=3, kernel=[7,7], stride=[1,1], padding="SAME", activation=L_Relu, name="Conv4")
 			concat_3 = tf.concat([conv1, conv2, conv3, conv4], axis=3, name="Concat_3")
 			conv5 = Conv_2D(concat_3, output_chan=3, kernel=[3,3], stride=[1,1], padding="SAME", name="Conv5_K")
 			clearImage = tf.add(tf.multiply(conv5, self.haze_in) - conv5, 1, name="Clear_Image")
@@ -45,13 +45,13 @@ class AOD(object):
 	
 	def dis(self, input_img, reuse=False):
 		with tf.variable_scope("Discriminator", reuse=reuse) as scope:
-			conv1 = Conv_2D(input_img, output_chan=5, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv1")
-			conv2 = Conv_2D(conv1, output_chan=10, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv2")
-			conv3 = Conv_2D(conv2, output_chan=16, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv3")
-			conv4 = Conv_2D(conv3, output_chan=20, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv4")
+			conv1 = Conv_2D(input_img, output_chan=3, kernel=[7,7], stride=[2,2], activation=L_Relu, name="Conv1")
+			conv2 = Conv_2D(conv1, output_chan=3, kernel=[5,5], stride=[2,2], activation=L_Relu, name="Conv2")
+			conv3 = Conv_2D(conv2, output_chan=3, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv3")
+			conv4 = Conv_2D(conv3, output_chan=3, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv4")
 			conv4_reshape = tf.reshape(conv4, shape=[-1, int(np.prod(conv4.get_shape()[1:]))])
 			linear1 = Dense(conv4_reshape, output_dim=512, activation=L_Relu, name="dense1")
-			linear2 = Dense(linear1, output_dim =1, activation=L_Relu , name="dense2")
+			linear2 = Dense(linear1, output_dim =1, activation=tf.sigmoid, name="dense2")
 			return linear2
 
 	def build_model(self):
@@ -72,7 +72,7 @@ class AOD(object):
 
 		with tf.name_scope("Loss") as scope:
 			self.dis_loss = -tf.reduce_mean(tf.log(self.dis_real) + tf.log(1-self.dis_fake))
-			self.gen_loss = -tf.reduce_mean(tf.log(self.dis_fake))
+			self.gen_loss = tf.reduce_mean(-tf.log(self.dis_fake)+tf.losses.mean_squared_error(self.clear_in, self.clearImage))
 			self.dis_loss_summ = tf.summary.scalar("Dis_Loss", self.dis_loss)
 			self.gen_loss_summ = tf.summary.scalar("Gen_Loss", self.gen_loss)
 							 
@@ -81,8 +81,8 @@ class AOD(object):
 			self.d_vars = [var for var in train_vars if "Discriminator" in var.name]
 			self.g_vars = [var for var in train_vars if "Generator" in var.name]
 
-			self.dis_solver = tf.train.AdamOptimizer(learning_rate=1e-05).minimize(self.dis_loss, var_list=self.d_vars)
-			self.gen_solver = tf.train.AdamOptimizer(learning_rate=1e-04).minimize(self.gen_loss, var_list=self.g_vars)
+			self.dis_solver = tf.train.AdamOptimizer(learning_rate=1e-05, beta1=0.5).minimize(self.dis_loss, var_list=self.d_vars)
+			self.gen_solver = tf.train.AdamOptimizer(learning_rate=1e-05, beta1=0.5).minimize(self.gen_loss, var_list=self.g_vars)
 
 		self.merged_summ = tf.summary.merge_all()
 		config = tf.ConfigProto()
@@ -119,8 +119,7 @@ class AOD(object):
 						self.train_writer.add_summary(gen_out[2])
 
 					if itr%5==0:
-						print "Epoch:", epoch, "Iteration:", itr/batch_size, "Gen Loss:", gen_out[1]
-						print "Dis loss:", dis_out[1], "Tot loss:", gen_out[1]+dis_out[1]
+						print "Epoch:", epoch, "Iteration:", itr/batch_size, "Gen Loss:", gen_out[1], "Dis loss:", dis_out[1]
 
 						
 				for itr in xrange(0, val_imgs.shape[0]-batch_size, batch_size):
@@ -131,7 +130,7 @@ class AOD(object):
 												self.clear_in: clear_in, self.train_phase:False})
 					self.val_writer.add_summary(out[2])
 
-					print "Epoch: ", epoch, "Iteration: ", itr/batch_size, "Validation Loss: ", out[0]+out[1]
+					print "Epoch:", epoch, "Iteration:", itr/batch_size, "Gen Val Loss:", out[1], "Dis val loss:", out[0]
 
 				if epoch%10==0:
 					self.saver.save(self.sess, self.save_path+"AOD", global_step=epoch)
