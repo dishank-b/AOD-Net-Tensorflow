@@ -45,16 +45,13 @@ class AOD(object):
 	
 	def dis(self, input_img, reuse=False):
 		with tf.variable_scope("Discriminator", reuse=reuse) as scope:
-			conv1 = Conv_2D(input_img, output_chan=16, kernel=[3,3], stride=[1,1],name="Conv1")
-			pool1 = max_pool(conv1, name="pool1")
-			conv2 = Conv_2D(pool1, output_chan=32, kernel=[3,3], stride=[1,1], name="Conv2")
-			pool2 = max_pool(conv2, name="pool2")
-			conv3 = Conv_2D(pool2, output_chan=64, kernel=[3,3], stride=[1,1], name="Conv3")
-			pool3 = max_pool(conv3, name="pool3")
-			conv4 = Conv_2D(pool3, output_chan=128, kernel=[3,3], stride=[2,2], name="Conv4")
+			conv1 = Conv_2D(input_img, output_chan=5, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv1")
+			conv2 = Conv_2D(conv1, output_chan=10, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv2")
+			conv3 = Conv_2D(conv2, output_chan=16, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv3")
+			conv4 = Conv_2D(conv3, output_chan=20, kernel=[3,3], stride=[2,2], activation=L_Relu, name="Conv4")
 			conv4_reshape = tf.reshape(conv4, shape=[-1, int(np.prod(conv4.get_shape()[1:]))])
-			linear1 = Dense(conv4_reshape, output_dim=512, name="dense1")
-			linear2 = Dense(linear1, output_dim =1, activation=tf.sigmoid, name="dense2")
+			linear1 = Dense(conv4_reshape, output_dim=512, activation=L_Relu, name="dense1")
+			linear2 = Dense(linear1, output_dim =1, activation=L_Relu , name="dense2")
 			return linear2
 
 	def build_model(self):
@@ -152,7 +149,7 @@ class AOD(object):
 	def test(self, input_imgs, batch_size):
 		sess=tf.Session()
 		
-		saver = tf.train.import_meta_graph(self.save_path+'AOD-50.meta')
+		saver = tf.train.import_meta_graph(self.save_path+'AOD-60.meta')
 		print self.save_path
 		saver.restore(sess,tf.train.latest_checkpoint(self.save_path))
 		print self.save_path
@@ -164,6 +161,7 @@ class AOD(object):
 
 		print "Tensor Loaded"
 		for itr in xrange(0, input_imgs.shape[0], batch_size):
+			print "Iteration:", itr
 			if itr+batch_size<=input_imgs.shape[0]:
 				end = itr+batch_size
 			else:

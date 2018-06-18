@@ -86,7 +86,7 @@ def Bn(x, is_train=True):
 	"""
 	return tf.contrib.layers.batch_norm(x, decay= 0.99, is_training=is_train, center= True, scale=True, reuse=False)
 
-def L_Relu(x, alpha=0.1):
+def L_Relu(x, alpha=0.2):
 	return tf.maximum(x, alpha*x)
 
 def BReLU(x, tmin=0.0, tmax=1.0):
