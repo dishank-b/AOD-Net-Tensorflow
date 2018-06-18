@@ -50,7 +50,7 @@ if mode=='train':
 	os.system('cp models.py '+model_path+'/model.py')
 	nnet.build_model()
 	print "Model Build......"
-	nnet.train_model(train_img1,val_img1, val_img2, learning_rate, batch_size, epoch_size)
+	nnet.train_model(train_img1,val_img1, learning_rate, batch_size, epoch_size)
 else:
 	print model_path
 	predict_clear= nnet.test(train_img1[:,0,:,:,:], batch_size)

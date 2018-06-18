@@ -3,13 +3,13 @@ from __future__ import unicode_literals
 import tensorflow as tf
 import numpy as np
 
-def Conv_2D(x, output_chan, kernel=[5,5], stride=[2,2],padding="SAME" ,activation=tf.nn.relu, use_bn=False, train_phase=True,add_summary=False,name="Conv_2D"):
+def Conv_2D(x, output_chan, kernel=[5,5], stride=[2,2],padding="SAME", activation=tf.nn.relu, use_bn=False, train_phase=True,add_summary=False,name="Conv_2D"):
 	input_shape = x.get_shape()
 	kern = [kernel[0], kernel[1], input_shape[-1], output_chan]
 	strd = [1, stride[0], stride[1], 1]
 	with tf.variable_scope(name) as scope:
-		W = tf.get_variable(name="W", shape=kern, initializer=tf.keras.initializers.he_normal())
-		b = tf.get_variable(name="b", shape=[output_chan], initializer=tf.keras.initializers.he_normal())
+		W = tf.get_variable(name="W", shape=kern, initializer=tf.contrib.layers.xavier_initializer(uniform=False))
+		b = tf.get_variable(name="b", shape=[output_chan], initializer=tf.contrib.layers.xavier_initializer(uniform=False))
 
 		Conv2D = tf.nn.bias_add(tf.nn.conv2d(input=x, filter=W, strides=strd, padding=padding), b)
 		
@@ -36,8 +36,8 @@ def Dconv_2D(x, output_chan, kernel=[5,5], stride=[2,2], padding="SAME",activati
 	batch_size = tf.shape(x)[0]
 	output_shape = [batch_size,input_shape[1]*strd[1],input_shape[2]*strd[2],output_chan]
 	with tf.variable_scope(name) as scope:
-		W = tf.get_variable(name="W", shape=kern, initializer=tf.keras.initializers.he_normal())
-		b = tf.get_variable(name="b", shape=[output_chan], initializer=tf.keras.initializers.he_normal())
+		W = tf.get_variable(name="W", shape=kern, initializer=tf.contrib.layers.xavier_initializer(uniform=False))
+		b = tf.get_variable(name="b", shape=[output_chan], initializer=tf.contrib.layers.xavier_initializer(uniform=False))
 
 		D_Conv2D = tf.nn.bias_add(tf.nn.conv2d_transpose(x, filter=W, output_shape=output_shape,strides=strd, padding=padding), b)
 		
@@ -57,11 +57,11 @@ def Dconv_2D(x, output_chan, kernel=[5,5], stride=[2,2], padding="SAME",activati
 
 		return out
 
-def Dense(x, output_dim, use_bn=True, activation=tf.nn.relu, train_phase=True,add_summary=False, name="Dense"):
+def Dense(x, output_dim, use_bn=False, activation=tf.nn.relu, train_phase=True,add_summary=False, name="Dense"):
 	input_dim = x.get_shape()[-1]
 	with tf.variable_scope(name) as scope:
-		W = tf.get_variable('W', shape=[input_dim, output_dim], initializer=tf.keras.initializers.he_normal())
-		b = tf.get_variable('b', shape=[output_dim], initializer=tf.keras.initializers.he_normal())
+		W = tf.get_variable('W', shape=[input_dim, output_dim], initializer=tf.contrib.layers.xavier_initializer(uniform=False))
+		b = tf.get_variable('b', shape=[output_dim], initializer=tf.contrib.layers.xavier_initializer(uniform=False))
 
 		dense = tf.nn.bias_add(tf.matmul(x, W), b)
 
@@ -95,7 +95,7 @@ def BReLU(x, tmin=0.0, tmax=1.0):
 def L_BReLU(x, tmin=0.0, tmax=1.0, alpha=0.1):
 	return tf.maximum(alpha*x, tf.minimum(x, tmax+alpha*(x-1)))
 
-def max_pool(input, kernel=3, stride=2, name=None):
+def max_pool(input_img, kernel=3, stride=2, name=None):
 
    if name is None: 
       name='max_pool'
@@ -103,7 +103,7 @@ def max_pool(input, kernel=3, stride=2, name=None):
    with tf.variable_scope(name):
       ksize = [1, kernel, kernel, 1]
       strides = [1, stride, stride, 1]
-      output = tf.nn.max_pool(input, ksize=ksize, strides=strides,
+      output = tf.nn.max_pool(input_img, ksize=ksize, strides=strides,
          padding='SAME')
       return output
 

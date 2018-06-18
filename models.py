@@ -30,6 +30,33 @@ class AOD(object):
 			print i[0], i[1], var_params
 		print "Total number of Trainable Parameters: ", str(tot_params/1000.0)+"K"
 
+	def gen(self, input_img):
+		with tf.variable_scope("Generator") as scope:
+			conv1 = Conv_2D(input_img, output_chan=3, kernel=[1,1], stride=[1,1], padding="SAME", name="Conv1")
+			conv2 = Conv_2D(conv1, output_chan=3, kernel=[3,3], stride=[1,1], padding="SAME", name="Conv2")
+			concat_1 = tf.concat([conv1, conv2], axis=3, name="Concat_1")
+			conv3 = Conv_2D(concat_1, output_chan=3, kernel=[5,5], stride=[1,1], padding="SAME", name="Conv3")
+			concat_2 = tf.concat([conv2, conv3], axis=3, name="Concat_2")
+			conv4 = Conv_2D(concat_2, output_chan=3, kernel=[7,7], stride=[1,1], padding="SAME", name="Conv4")
+			concat_3 = tf.concat([conv1, conv2, conv3, conv4], axis=3, name="Concat_3")
+			conv5 = Conv_2D(concat_3, output_chan=3, kernel=[3,3], stride=[1,1], padding="SAME", name="Conv5_K")
+			clearImage = tf.add(tf.multiply(conv5, self.haze_in) - conv5, 1, name="Clear_Image")
+			return clearImage
+	
+	def dis(self, input_img, reuse=False):
+		with tf.variable_scope("Discriminator", reuse=reuse) as scope:
+			conv1 = Conv_2D(input_img, output_chan=16, kernel=[3,3], stride=[1,1],name="Conv1")
+			pool1 = max_pool(conv1, name="pool1")
+			conv2 = Conv_2D(pool1, output_chan=32, kernel=[3,3], stride=[1,1], name="Conv2")
+			pool2 = max_pool(conv2, name="pool2")
+			conv3 = Conv_2D(pool2, output_chan=64, kernel=[3,3], stride=[1,1], name="Conv3")
+			pool3 = max_pool(conv3, name="pool3")
+			conv4 = Conv_2D(pool3, output_chan=128, kernel=[3,3], stride=[2,2], name="Conv4")
+			conv4_reshape = tf.reshape(conv4, shape=[-1, int(np.prod(conv4.get_shape()[1:]))])
+			linear1 = Dense(conv4_reshape, output_dim=512, name="dense1")
+			linear2 = Dense(linear1, output_dim =1, activation=tf.sigmoid, name="dense2")
+			return linear2
+
 	def build_model(self):
 		with tf.name_scope("Inputs") as scope:
 			self.haze_in = tf.placeholder(tf.float32, shape=[None,240,320,3], name="Haze_Image")
@@ -39,25 +66,26 @@ class AOD(object):
 			clear_summ = tf.summary.image("clear_in", self.clear_in)
 
 		with tf.name_scope("Model") as scope:
-			
-			conv1 = Conv_2D(self.haze_in, output_chan=3, kernel=[1,1], stride=[1,1], padding="SAME", name="Conv1")
-			conv2 = Conv_2D(conv1, output_chan=3, kernel=[3,3], stride=[1,1], padding="SAME", name="Conv2")
-			concat_1 = tf.concat([conv1, conv2], axis=3, name="Concat_1")
-			conv3 = Conv_2D(concat_1, output_chan=3, kernel=[5,5], stride=[1,1], padding="SAME", name="Conv3")
-			concat_2 = tf.concat([conv2, conv3], axis=3, name="Concat_2")
-			conv4 = Conv_2D(concat_2, output_chan=3, kernel=[7,7], stride=[1,1], padding="SAME", name="Conv4")
-			concat_3 = tf.concat([conv1, conv2, conv3, conv4], axis=3, name="Concat_3")
-			conv5 = Conv_2D(concat_3, output_chan=3, kernel=[3,3], stride=[1,1], padding="SAME", name="Conv5_K")
-			self.clearImage = tf.add(tf.multiply(conv5, self.haze_in) - conv5, 1)
+			self.clearImage = self.gen(self.haze_in)
+			self.dis_real = self.dis(self.clear_in, reuse=False)
+			self.dis_fake = self.dis(self.clearImage, reuse=True)
 			clear_image_summ = tf.summary.image("Out_Clear", self.clearImage)
+			dis_real_summ = tf.summary.scalar("Dis_Real", tf.reduce_mean(self.dis_real))
+			dis_fake_summ = tf.summary.scalar("Dis_Fake", tf.reduce_mean(self.dis_fake))
 
 		with tf.name_scope("Loss") as scope:
-			self.loss = tf.losses.mean_squared_error(self.clear_in, self.clearImage)
-			self.train_loss_summ = tf.summary.scalar("Train_Loss", self.loss)
-			# self.val_loss_summ = tf.summary.scalar("Val_Loss", self.loss)
+			self.dis_loss = -tf.reduce_mean(tf.log(self.dis_real) + tf.log(1-self.dis_fake))
+			self.gen_loss = -tf.reduce_mean(tf.log(self.dis_fake))
+			self.dis_loss_summ = tf.summary.scalar("Dis_Loss", self.dis_loss)
+			self.gen_loss_summ = tf.summary.scalar("Gen_Loss", self.gen_loss)
 							 
 		with tf.name_scope("Optimizers") as scope:
-			self.solver = tf.train.AdamOptimizer(learning_rate=1e-03).minimize(self.loss)
+			train_vars = tf.trainable_variables()
+			self.d_vars = [var for var in train_vars if "Discriminator" in var.name]
+			self.g_vars = [var for var in train_vars if "Generator" in var.name]
+
+			self.dis_solver = tf.train.AdamOptimizer(learning_rate=1e-05).minimize(self.dis_loss, var_list=self.d_vars)
+			self.gen_solver = tf.train.AdamOptimizer(learning_rate=1e-04).minimize(self.gen_loss, var_list=self.g_vars)
 
 		self.merged_summ = tf.summary.merge_all()
 		config = tf.ConfigProto()
@@ -83,23 +111,30 @@ class AOD(object):
 				for itr in xrange(0, train_imgs.shape[0]-batch_size, batch_size):
 					haze_in = train_imgs[itr:itr+batch_size,0]
 					clear_in = train_imgs[itr:itr+batch_size,1]
-					sess_in = [self.solver, self.loss, self.merged_summ]
-					sess_out = self.sess.run(sess_in, {self.haze_in:haze_in, self.clear_in: clear_in,self.train_phase:True})
-					self.train_writer.add_summary(sess_out[2])
+
+					dis_in = [self.dis_solver, self.dis_loss, self.merged_summ]
+					dis_out = self.sess.run(dis_in, {self.haze_in:haze_in, self.clear_in: clear_in,self.train_phase:True})
+					self.train_writer.add_summary(dis_out[2])
+					
+					for num in range(2):
+						gen_in = [self.gen_solver, self.gen_loss, self.merged_summ]
+						gen_out = self.sess.run(gen_in, {self.haze_in:haze_in, self.clear_in: clear_in,self.train_phase:True})
+						self.train_writer.add_summary(gen_out[2])
 
 					if itr%5==0:
-						print "Epoch:", epoch, "Iteration:", itr/batch_size, "Loss:", sess_out[1] 
+						print "Epoch:", epoch, "Iteration:", itr/batch_size, "Gen Loss:", gen_out[1]
+						print "Dis loss:", dis_out[1], "Tot loss:", gen_out[1]+dis_out[1]
 
 						
 				for itr in xrange(0, val_imgs.shape[0]-batch_size, batch_size):
 					haze_in = val_imgs[itr:itr+batch_size,0]
 					clear_in = val_imgs[itr:itr+batch_size,1]
 
-					loss ,summ = self.sess.run([self.loss, self.merged_summ], {self.haze_in: haze_in, 
+					out = self.sess.run([self.dis_loss,self.gen_loss ,self.merged_summ], {self.haze_in: haze_in, 
 												self.clear_in: clear_in, self.train_phase:False})
-					self.val_writer.add_summary(summ)
+					self.val_writer.add_summary(out[2])
 
-					print "Epoch: ", epoch, "Iteration: ", itr/batch_size, "Validation Loss: ", loss
+					print "Epoch: ", epoch, "Iteration: ", itr/batch_size, "Validation Loss: ", out[0]+out[1]
 
 				if epoch%10==0:
 					self.saver.save(self.sess, self.save_path+"AOD", global_step=epoch)
@@ -125,7 +160,7 @@ class AOD(object):
 
 		x = graph.get_tensor_by_name("Inputs/Haze_Image:0")
 		is_train = graph.get_tensor_by_name("Inputs/is_training:0")
-		y = graph.get_tensor_by_name("Model/Add:0")
+		y = graph.get_tensor_by_name("Model/Generator/Clear_Image:0")
 
 		print "Tensor Loaded"
 		for itr in xrange(0, input_imgs.shape[0], batch_size):

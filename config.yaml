@@ -1,5 +1,5 @@
 model_params:  
-  descrip: "End to End using AOD. Varied trans map."
+  descrip: "Training AOD adversarially."
   model_name: "AOD" # DD or MSCNN or AOD
   mode: "test"   # train or test
   log_dir: /media/mnt/dehaze/aod_logs/ # path to write the model and load the model
